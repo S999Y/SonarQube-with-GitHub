@@ -31,7 +31,7 @@ SonarQube Scanner action
 ngrok public URL  --->  SonarQube container :9000  --->  PostgreSQL
 ```
 
-The local SonarQube server is exposed through ngrok because GitHub-hosted runners cannot reach `localhost`. The workflow reads the public URL from the `SONAR_HOST_URL` secret.
+The local SonarQube server is exposed through ngrok because GitHub-hosted runners cannot reach `localhost`. The workflow uses the public host URL hardcoded in its `env` block and authenticates with the `SONAR_TOKEN` secret.
 
 ## 4. Project Structure
 
@@ -87,10 +87,9 @@ sonar.sourceEncoding=UTF-8
 sonar.javascript.lcov.reportPaths=coverage/lcov.info
 sonar.exclusions=node_modules/**,coverage/**,.scannerwork/**
 sonar.host.url=http://localhost:9000
-sonar.login=${env.SONAR_TOKEN}
 ```
 
-The token is injected from the environment, so no credential is stored in the repository. During CI, `SONAR_HOST_URL` overrides the local host URL.
+The token is passed at scan time (environment variable or `-Dsonar.login`), so no credential is stored in the repository. During CI, the workflow's `SONAR_HOST_URL` overrides the local host URL.
 
 ### 5.4 SonarQube server and tunnel
 
@@ -112,7 +111,7 @@ The tunnel can be started either as a container (`docker compose up -d ngrok`) o
 ngrok http 9000 --url https://tuition-cilantro-unexpired.ngrok-free.dev
 ```
 
-The account's static free domain keeps `SONAR_HOST_URL` stable across restarts. Only the local `.env` holds the authtoken and token; both are git-ignored.
+The account's static free domain keeps the host URL stable across restarts. Only the local `.env` holds the authtoken and token; both are git-ignored. The public host URL is also set in the workflow `env` block.
 
 ### 5.5 GitHub Actions workflow
 
@@ -122,23 +121,30 @@ The account's static free domain keeps `SONAR_HOST_URL` stable across restarts. 
 2. Set up Node.js 20 with npm caching.
 3. Install dependencies using `npm ci`.
 4. Run unit tests and generate `coverage/lcov.info`.
-5. Run `SonarSource/sonarqube-scan-action@v5` with `SONAR_TOKEN` and `SONAR_HOST_URL`.
+5. Validate that `SONAR_TOKEN` is present and print the target host.
+6. Run `SonarSource/sonarqube-scan-action@v6` with the `SONAR_TOKEN` secret and the public host URL from the workflow `env` block.
 
-Required **repository secrets** (Settings → Secrets and variables → Actions → Secrets tab, not Variables):
+Required **repository secret** (Settings → Secrets and variables → Actions → Secrets tab, not Variables):
 
 | Secret | Description |
 | --- | --- |
 | `SONAR_TOKEN` | Token generated in SonarQube (My Account > Security) |
-| `SONAR_HOST_URL` | `https://tuition-cilantro-unexpired.ngrok-free.dev` (scheme required, no trailing slash) |
 
-The workflow reads `${{ secrets.SONAR_HOST_URL }}`; storing the value as an Actions *variable* leaves the secret empty and the scanner fails with `Expected URL scheme 'http' or 'https' but no scheme was found`.
+The host URL is not sensitive and is set in `.github/workflows/sonarqube.yml`:
+
+```yaml
+env:
+  SONAR_HOST_URL: https://tuition-cilantro-unexpired.ngrok-free.dev
+```
+
+The first CI run used `${{ secrets.SONAR_HOST_URL }}`; because that secret was never created the value resolved to an empty string and the scanner failed with `Expected URL scheme 'http' or 'https' but no scheme was found`. The fix was to embed the public URL in the workflow and keep only the token as a secret.
 
 ## 6. Execution Steps
 
 1. Create the GitHub repository and push this folder as the repository root (https://github.com/S999Y/SonarQube-with-GitHub).
 2. Start the Docker stack and open http://localhost:9000.
 3. Create the project `assignment16-sonarqube-calculator` and generate a token.
-4. Add `SONAR_TOKEN` and `SONAR_HOST_URL` as **repository secrets** (Secrets tab).
+4. Add `SONAR_TOKEN` as a **repository secret** (Secrets tab). The host URL is already set in the workflow.
 5. Keep the ngrok tunnel running, then push a commit to `main`.
 6. Confirm the "SonarQube Analysis" workflow completes in the Actions tab.
 7. Open the project in SonarQube and review the analysis report.
@@ -173,7 +179,7 @@ Latest analysis results:
 | BLOCKER | CODE_SMELL | javascript:S3516 | Function always returns the same value (x2) |
 | MINOR | CODE_SMELL | javascript:S7773 | Prefer `Number.parseInt` / `Number.NaN` (x2) |
 
-Analysis was run locally with `sonarsource/sonar-scanner-cli` against the Docker SonarQube server; the GitHub Actions workflow runs the same scan on every push. The first CI attempt failed on a missing `SONAR_HOST_URL` secret (see troubleshooting) and was fixed by adding it as a repository secret.
+Analysis was run locally with `sonarsource/sonar-scanner-cli` against the Docker SonarQube server; the GitHub Actions workflow runs the same scan on every push. The first CI attempt failed because `SONAR_HOST_URL` resolved to an empty secret (see troubleshooting); the host URL was then hardcoded in the workflow and only the token remains a secret.
 
 ### Screenshots
 
@@ -229,13 +235,13 @@ Analysis was run locally with `sonarsource/sonar-scanner-cli` against the Docker
 
 | Problem | Cause | Fix |
 | --- | --- | --- |
-| `Expected URL scheme 'http' or 'https' but no scheme was found` | `SONAR_HOST_URL` secret missing, empty, or stored as a variable | Add it under repository **Secrets** with the full `https://` URL, then re-run the job |
-| `Could not connect to SonarQube server` | ngrok URL changed or tunnel down | Restart ngrok, read the new URL, update `SONAR_HOST_URL`, re-run the workflow |
-| `Not authorized` in scan step | Token missing, expired or wrong project | Regenerate the token in SonarQube and update `SONAR_TOKEN` |
+| `Expected URL scheme 'http' or 'https' but no scheme was found` | `SONAR_HOST_URL` was empty (missing secret) | Set it in the workflow `env` block; it now ships with the literal ngrok URL |
+| `Could not connect to SonarQube server` | ngrok URL changed or tunnel down | Restart ngrok, read the new URL, update `SONAR_HOST_URL` in the workflow, re-run |
+| `Not authorized` in scan step | Token missing, expired or wrong project | Regenerate the token in SonarQube and update the `SONAR_TOKEN` secret |
 | `Project not found` | Project key mismatch or token lacks create permission | Compare `sonar.projectKey` with the dashboard |
 | SonarQube container restarts | Postgres not ready | Wait for the `db` healthcheck; check `docker compose logs sonarqube` |
 | Coverage 0% in SonarQube | `coverage/lcov.info` missing in CI | Ensure `npm run test:ci` runs before the scan step |
-| Scanner warns that both `sonar.login` and `sonar.token` are set | `sonar-project.properties` defines `sonar.login` while the action passes `SONAR_TOKEN` | Harmless; keep only the `SONAR_TOKEN` secret for authentication |
+| Scanner warns that both `sonar.login` and `sonar.token` are set | `sonar-project.properties` defined `sonar.login` while the action passes `SONAR_TOKEN` | Removed the `sonar.login` line from the properties file |
 
 ## 9. Submission
 

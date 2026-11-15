@@ -8,14 +8,14 @@ Sample JavaScript (Node.js) project analyzed by SonarQube 26.11 on every push th
 
 ## Stack
 
-| Component | Version |
-| --- | --- |
-| Runtime | Node.js 20+ |
-| Tests | Jest 29 with lcov coverage |
-| Code analysis | SonarQube 26.11 Community Build (Docker) |
-| Database | PostgreSQL 17 (Docker) |
+| Component     | Version                                      |
+| ------------- | -------------------------------------------- |
+| Runtime       | Node.js 20+                                  |
+| Tests         | Jest 29 with lcov coverage                   |
+| Code analysis | SonarQube 26.11 Community Build (Docker)     |
+| Database      | PostgreSQL 17 (Docker)                       |
 | Public tunnel | ngrok (native Windows agent or Docker image) |
-| CI/CD | GitHub Actions |
+| CI/CD         | GitHub Actions                               |
 
 ## Repository layout
 
@@ -100,29 +100,35 @@ The workflow runs on every push to `main`, on pull requests and manually:
 2. Set up Node.js 20 with npm caching.
 3. `npm ci`.
 4. `npm run test:ci` (Jest + lcov).
-5. `SonarSource/sonarqube-scan-action@v5` with the two secrets.
+5. `SonarSource/sonarqube-scan-action@v6` with `SONAR_TOKEN` and the public host URL.
 
-Required **repository secrets** (Settings → Secrets and variables → Actions → **Secrets** tab):
+The SonarQube host is not a credential, so it is set directly in the workflow (`env: SONAR_HOST_URL`):
 
-| Secret | Value |
-| --- | --- |
-| `SONAR_TOKEN` | Token generated in SonarQube |
-| `SONAR_HOST_URL` | `https://tuition-cilantro-unexpired.ngrok-free.dev` |
+| Setting      | Value                                               |
+| ------------ | --------------------------------------------------- |
+| Host URL     | `https://tuition-cilantro-unexpired.ngrok-free.dev` |
+| Token secret | `SONAR_TOKEN`                                       |
 
-`SONAR_HOST_URL` must include `https://` and have no trailing slash. Keep ngrok running while the job executes.
+Required **repository secret** (Settings → Secrets and variables → Actions → **Secrets** tab):
+
+| Secret        | Value                                |
+| ------------- | ------------------------------------ |
+| `SONAR_TOKEN` | Token generated in SonarQube         |
+
+If the tunnel URL ever changes, update `SONAR_HOST_URL` in `.github/workflows/sonarqube.yml` (no trailing slash). Keep ngrok running while the job executes.
 
 ## Expected result
 
 `src/legacy-utils.js` contains deliberate defects so the analysis produces findings:
 
-| Metric | Value |
-| --- | --- |
+| Metric       | Value                             |
+| ------------ | --------------------------------- |
 | Quality Gate | Failed (ERROR) - 7 new violations |
-| Bugs | 3 |
-| Code Smells | 4 |
-| Coverage | 97.8% |
-| Duplications | 0.0% |
-| Reliability | C |
+| Bugs         | 3                                 |
+| Code Smells  | 4                                 |
+| Coverage     | 97.8%                             |
+| Duplications | 0.0%                              |
+| Reliability  | C                                 |
 
 31 Jest tests pass; the gate fails because of the seeded defects, which is the intended demonstration.
 
@@ -130,10 +136,10 @@ Screenshots: [report/images](report/images) and metrics in [report/report.md](re
 
 ## Troubleshooting
 
-| Problem | Fix |
-| --- | --- |
-| `Expected URL scheme 'http' or 'https' but no scheme was found` | `SONAR_HOST_URL` is missing/empty. Add it under **repository secrets** (not variables) and re-run the job |
-| `Not authorized` | Regenerate the token in SonarQube and update `SONAR_TOKEN` |
-| `Could not connect to SonarQube server` | ngrok tunnel is down or the URL changed; restart ngrok and update `SONAR_HOST_URL` |
-| Coverage 0% | `coverage/lcov.info` is missing; make sure `npm run test:ci` runs before the scan |
-| SonarQube container restarts | Postgres is still starting; wait for the `db` healthcheck and check `docker compose logs sonarqube` |
+| Problem                                                         | Fix                                                                                                       |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `Expected URL scheme 'http' or 'https' but no scheme was found` | `SONAR_HOST_URL` resolved to an empty value; it is now hardcoded in the workflow env                     |
+| `Not authorized`                                                | Regenerate the token in SonarQube and update the `SONAR_TOKEN` repo secret                                |
+| `Could not connect to SonarQube server`                         | ngrok tunnel is down or the URL changed; restart ngrok and update `SONAR_HOST_URL` in the workflow        |
+| Coverage 0%                                                     | `coverage/lcov.info` is missing; make sure `npm run test:ci` runs before the scan                         |
+| SonarQube container restarts                                    | Postgres is still starting; wait for the `db` healthcheck and check `docker compose logs sonarqube`       |

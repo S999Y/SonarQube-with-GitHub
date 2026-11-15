@@ -8,6 +8,9 @@ on:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
+env:
+  SONAR_HOST_URL: https://tuition-cilantro-unexpired.ngrok-free.dev
+
 jobs:
   build:
     name: Build and analyze
@@ -31,8 +34,17 @@ jobs:
       - name: Run unit tests with coverage
         run: npm run test:ci
 
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v5
+      - name: Validate Sonar configuration
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::SONAR_TOKEN secret is missing. Add it under Settings > Secrets and variables > Actions > Secrets."
+            exit 1
+          fi
+          echo "SonarQube host: $SONAR_HOST_URL"
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
