@@ -12,8 +12,9 @@ Set up SonarQube with a sample project and configure GitHub Actions to analyze c
 | Test framework | Jest 29 with lcov coverage |
 | Code analysis | SonarQube 26.11 Community Build (Docker) |
 | Database | PostgreSQL 17 (Docker) |
-| Public tunnel | ngrok (Docker image) |
+| Public tunnel | ngrok (native Windows agent or Docker image) |
 | CI/CD | GitHub Actions |
+| Repository | https://github.com/S999Y/SonarQube-with-GitHub |
 
 ## 3. Architecture
 
@@ -35,7 +36,7 @@ The local SonarQube server is exposed through ngrok because GitHub-hosted runner
 ## 4. Project Structure
 
 ```
-code/
+.
 ├── .github/workflows/sonarqube.yml
 ├── docker-compose.yml
 ├── .env.example
@@ -47,10 +48,13 @@ code/
 │   ├── calculator.js
 │   ├── index.js
 │   └── legacy-utils.js
-└── test/
-    ├── calculator.test.js
-    ├── index.test.js
-    └── legacy-utils.test.js
+├── test/
+│   ├── calculator.test.js
+│   ├── index.test.js
+│   └── legacy-utils.test.js
+└── report/
+    ├── report.md
+    └── images/
 ```
 
 ## 5. Implementation
@@ -90,20 +94,25 @@ The token is injected from the environment, so no credential is stored in the re
 
 ### 5.4 SonarQube server and tunnel
 
-`docker-compose.yml` starts PostgreSQL 17, SonarQube 26.11 Community and the ngrok agent.
+`docker-compose.yml` defines PostgreSQL 17, SonarQube 26.11 Community and an optional ngrok agent.
 
 ```bash
-cd code
 cp .env.example .env
 # edit .env: NGROK_AUTHTOKEN, SONAR_TOKEN, SONAR_HOST_URL
-docker compose up -d
+docker compose up -d db sonarqube
 ```
 
 - SonarQube dashboard: http://localhost:9000 (first login `admin` / `admin`, password change is enforced)
 - ngrok inspector: http://localhost:4040
 - Public URL: `curl http://localhost:4040/api/tunnels`
 
-To keep a stable URL, claim the free static domain in ngrok and change the service command to `http --domain=<your-domain> sonarqube:9000`. The current tunnel uses a static free domain, so `SONAR_HOST_URL` stays valid across restarts.
+The tunnel can be started either as a container (`docker compose up -d ngrok`) or natively on Windows:
+
+```bash
+ngrok http 9000 --url https://tuition-cilantro-unexpired.ngrok-free.dev
+```
+
+The account's static free domain keeps `SONAR_HOST_URL` stable across restarts. Only the local `.env` holds the authtoken and token; both are git-ignored.
 
 ### 5.5 GitHub Actions workflow
 
@@ -115,26 +124,28 @@ To keep a stable URL, claim the free static domain in ngrok and change the servi
 4. Run unit tests and generate `coverage/lcov.info`.
 5. Run `SonarSource/sonarqube-scan-action@v5` with `SONAR_TOKEN` and `SONAR_HOST_URL`.
 
-Required repository secrets:
+Required **repository secrets** (Settings → Secrets and variables → Actions → Secrets tab, not Variables):
 
 | Secret | Description |
 | --- | --- |
 | `SONAR_TOKEN` | Token generated in SonarQube (My Account > Security) |
-| `SONAR_HOST_URL` | Public ngrok URL, e.g. `https://xxxx.ngrok-free.app` |
+| `SONAR_HOST_URL` | `https://tuition-cilantro-unexpired.ngrok-free.dev` (scheme required, no trailing slash) |
+
+The workflow reads `${{ secrets.SONAR_HOST_URL }}`; storing the value as an Actions *variable* leaves the secret empty and the scanner fails with `Expected URL scheme 'http' or 'https' but no scheme was found`.
 
 ## 6. Execution Steps
 
-1. Create the GitHub repository and push the `code/` folder.
+1. Create the GitHub repository and push this folder as the repository root (https://github.com/S999Y/SonarQube-with-GitHub).
 2. Start the Docker stack and open http://localhost:9000.
 3. Create the project `assignment16-sonarqube-calculator` and generate a token.
-4. Add `SONAR_TOKEN` and `SONAR_HOST_URL` in GitHub repository settings.
-5. Push a commit to `main`.
-6. Confirm the "SonarQube Analysis" workflow succeeds in the Actions tab.
+4. Add `SONAR_TOKEN` and `SONAR_HOST_URL` as **repository secrets** (Secrets tab).
+5. Keep the ngrok tunnel running, then push a commit to `main`.
+6. Confirm the "SonarQube Analysis" workflow completes in the Actions tab.
 7. Open the project in SonarQube and review the analysis report.
 
 ## 7. Results
 
-Fill this table after the workflow completes.
+Latest analysis results:
 
 | Metric | Value |
 | --- | --- |
@@ -162,29 +173,74 @@ Fill this table after the workflow completes.
 | BLOCKER | CODE_SMELL | javascript:S3516 | Function always returns the same value (x2) |
 | MINOR | CODE_SMELL | javascript:S7773 | Prefer `Number.parseInt` / `Number.NaN` (x2) |
 
-Analysis performed locally with `sonarsource/sonar-scanner-cli` against the Docker SonarQube server; the same scan runs in CI on every push.
+Analysis was run locally with `sonarsource/sonar-scanner-cli` against the Docker SonarQube server; the GitHub Actions workflow runs the same scan on every push. The first CI attempt failed on a missing `SONAR_HOST_URL` secret (see troubleshooting) and was fixed by adding it as a repository secret.
 
-Dashboard screenshot: `report/sonarqube-dashboard.png`
+### Screenshots
 
-![SonarQube dashboard](sonarqube-dashboard.png)
+| Screenshot | File |
+| --- | --- |
+| SonarQube login | `report/images/sonarqube-login.png` |
+| Project list | `report/images/project-list.png` |
+| Project overview | `report/images/summary.png` |
+| Dashboard (failed quality gate) | `report/images/sonarqube-dashboard.png` |
+| Analysis summary | `report/images/sonarqube-issues.png` |
+| Issues list | `report/images/issue.png` |
+| ngrok tunnel | `report/images/ngrok.png` |
+| GitHub Actions run | `report/images/github-action.png` |
+| Repository secrets | `report/images/secret-setup.png` |
 
-Issues screenshot: `report/sonarqube-issues.png`
+#### SonarQube login
 
-![SonarQube issues](sonarqube-issues.png)
+![SonarQube login](images/sonarqube-login.png)
+
+#### Project list
+
+![SonarQube project list](images/project-list.png)
+
+#### Project overview
+
+![SonarQube project overview](images/summary.png)
+
+#### Dashboard - failed quality gate
+
+![SonarQube dashboard](images/sonarqube-dashboard.png)
+
+#### Analysis summary
+
+![SonarQube analysis summary](images/sonarqube-issues.png)
+
+#### Issues list
+
+![SonarQube issues list](images/issue.png)
+
+#### ngrok tunnel
+
+![ngrok tunnel](images/ngrok.png)
+
+#### GitHub Actions run
+
+![GitHub Actions run](images/github-action.png)
+
+#### Repository secrets
+
+![GitHub repository secrets](images/secret-setup.png)
 
 ## 8. Troubleshooting
 
 | Problem | Cause | Fix |
 | --- | --- | --- |
-| `Could not connect to SonarQube server` | ngrok URL changed or tunnel down | Restart the `ngrok` service, read the new URL, update `SONAR_HOST_URL`, re-run the workflow |
+| `Expected URL scheme 'http' or 'https' but no scheme was found` | `SONAR_HOST_URL` secret missing, empty, or stored as a variable | Add it under repository **Secrets** with the full `https://` URL, then re-run the job |
+| `Could not connect to SonarQube server` | ngrok URL changed or tunnel down | Restart ngrok, read the new URL, update `SONAR_HOST_URL`, re-run the workflow |
 | `Not authorized` in scan step | Token missing, expired or wrong project | Regenerate the token in SonarQube and update `SONAR_TOKEN` |
 | `Project not found` | Project key mismatch or token lacks create permission | Compare `sonar.projectKey` with the dashboard |
 | SonarQube container restarts | Postgres not ready | Wait for the `db` healthcheck; check `docker compose logs sonarqube` |
 | Coverage 0% in SonarQube | `coverage/lcov.info` missing in CI | Ensure `npm run test:ci` runs before the scan step |
+| Scanner warns that both `sonar.login` and `sonar.token` are set | `sonar-project.properties` defines `sonar.login` while the action passes `SONAR_TOKEN` | Harmless; keep only the `SONAR_TOKEN` secret for authentication |
 
 ## 9. Submission
 
-- GitHub repository: `<add link after pushing>`
-- SonarQube report screenshot: `report/sonarqube-dashboard.png`
+- GitHub repository: https://github.com/S999Y/SonarQube-with-GitHub
+- SonarQube report screenshot: `report/images/sonarqube-dashboard.png`
+- All screenshots: `report/images/`
 - Public dashboard (while the tunnel is running): https://tuition-cilantro-unexpired.ngrok-free.dev
-- Tracking notes: `docs/agent.md`
+- Tracking notes: `docs/agent.md` (kept outside this repository)
