@@ -2,8 +2,9 @@
 
 Sample JavaScript (Node.js) project analyzed by SonarQube 26.11 on every push through GitHub Actions.
 
+# >> [OPEN THE FULL REPORT (report/report.md)](report/report.md) <<
+
 - Repository: https://github.com/S999Y/SonarQube-with-GitHub
-- Full write-up: [report/report.md](report/report.md)
 - SonarQube dashboard (while the tunnel is up): https://tuition-cilantro-unexpired.ngrok-free.dev
 
 ## Stack
