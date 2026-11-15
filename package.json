@@ -1,0 +1,31 @@
+{
+  "name": "assignment16-sonarqube-calculator",
+  "version": "1.0.0",
+  "description": "Sample JavaScript project analyzed by SonarQube through GitHub Actions",
+  "main": "src/calculator.js",
+  "scripts": {
+    "test": "jest --coverage",
+    "test:ci": "jest --coverage --ci --coverageReporters=lcov --coverageReporters=text"
+  },
+  "keywords": [
+    "sonarqube",
+    "github-actions",
+    "javascript",
+    "jest"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "collectCoverageFrom": [
+      "src/**/*.js"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "lcov",
+      "text"
+    ]
+  }
+}
